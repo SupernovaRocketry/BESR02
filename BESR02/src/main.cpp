@@ -8,7 +8,8 @@ void taskWriteSD(void *pvParameters);
 #include <SPI.h>
 #include <FS.h>
 #include "max6675.h"
-
+#include "freertos/task.h"   // Biblioteca que proporciona a criação e manuseamento das Tasks
+#include "freertos/queue.h"  // Biblioteca que proporciona a criação e manuseamento das filas
 
 #define PWM_PIN 27 // ALTERAR O PINO
 #define PWM_CHANNEL 0 // Canal LEDC
@@ -16,10 +17,10 @@ void taskWriteSD(void *pvParameters);
 #define pinSO  19 
 #define pinCS  5 
 #define pinCLK 18  
+#define pinmosi 23
 
-
-const int LOADCELL_DOUT_PIN = 2;
-const int LOADCELL_SCK_PIN = 3;
+const int LOADCELL_DOUT_PIN = 35;
+const int LOADCELL_SCK_PIN = 18;
 
 MAX6675 sensorTemp(pinCLK, pinCS, pinSO); 
 HX711 scl;
@@ -34,33 +35,61 @@ float brt, liquido, temp;
   xSemaphoreGiveFromISR(xsmfr, NULL);
   }
 */
+SPIClass spi = SPIClass(VSPI);
+char nomeConcat[16];
+
+SemaphoreHandle_t xMutex;
+QueueHandle_t SDdataQueue;
+
+String data = "";
 
 void setup() {
+  xMutex = xSemaphoreCreateMutex(); // cria o objeto do semáforo xMutex
+  SDdataQueue = xQueueCreate(100, sizeof(String)); // 100 máximo da fila
   Serial.begin(9600); // 115200
+  spi.begin(pinCLK, pinSO,pinmosi, pinCS);
+
   ledcSetup(PWM_CHANNEL, 20000000 , 1);
+  //PWM
   ledcAttachPin(PWM_PIN, PWM_CHANNEL);
   ledcWrite(PWM_CHANNEL, 1);
+  //Célula de carga
   scl.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   scl.set_scale(100.0);
   scl.tare();
-  SD.begin();
 
-  xsmfr = xSemaphoreCreateBinary();
+  // Cartão SD
+  SD.begin(pinCS, spi);
+  // Algoritmo para ir criando um arquivo toda vez que inicializa
+  int n = 1;
+  bool parar = false;
+  while (!parar)
+  {
+      sprintf(nomeConcat, "/dataBE%d.txt", n);
+      if (SD.exists(nomeConcat))
+        n++;
+      else
+        parar = true;
+    }
+  df = SD.open(nomeConcat, FILE_WRITE);
+  df.close();
+
+ //xsmfr = xSemaphoreCreateBinary();
   xTaskCreatePinnedToCore(
       taskReadSensor,
       "TaskSensor",
       10000,
       NULL,
       1,
-      &xsnsr,
-      1);
+      NULL,
+      0);
   xTaskCreatePinnedToCore(
       taskWriteSD,
       "TaskSD",
       10000,
       NULL,
       1,
-      &xSD,
+      NULL,
       1);
 }
 
@@ -72,26 +101,32 @@ void loop() {
 void taskReadSensor(void *pvParameters) {
   //(void)pvParameters;
   while (true) {
-    if (xSemaphoreTake(xsmfr, portMAX_DELAY) == pdTRUE) {
+    
       temp = sensorTemp.readCelsius();
+      // Rever leitura do HX711
       brt = scl.read();
       liquido = brt - scl.get_offset();
-      int pwmValue = map(brt, 0, 1023, 0, 255); // Mapear a leitura do sensor para o ciclo de trabalho do PWM
-      ledcWrite(0, pwmValue);  // Atualizar o PWM com base na leitura do sensor
-      
-    }
+      data = "Temp:"+ String(temp) + ", Leitura:" +  String(liquido);
+      if (uxQueueSpacesAvailable(SDdataQueue) != 0)
+      {
+        xQueueSend(SDdataQueue, &data, 0);
+      }
   }vTaskDelay(1000);
 }
-
+#define SDMAX 20
 void taskWriteSD(void *pvParameters) {
-  (void)pvParameters;
+  //(void)pvParameters;
+  uint32_t contador_sd = 0;
   while (true) {
-      df = SD.open("Teste_estatico.txt", FILE_APPEND);
-      df.print(brt);
-      df.print(", ");
-      df.println(liquido);
-      df.print(temp);
-      df.print(", ");
-      df.close();
-    }vTaskDelay(1000);
+    if (uxQueueMessagesWaiting(SDdataQueue) > SDMAX){
+      while (contador_sd < SDMAX)
+      {
+        xQueueReceive(SDdataQueue, &data, 0);
+        df = SD.open(nomeConcat, FILE_APPEND);
+        df.println(data);
+        df.close();
+        contador_sd++;
+      }
+    }
+  }vTaskDelay(1000);
 }
