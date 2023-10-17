@@ -10,7 +10,7 @@ void taskWriteSD(void *pvParameters);
 #include "max6675.h"
 
 
-#define PWM_PIN 2 // ALTERAR O PINO
+#define PWM_PIN 27 // ALTERAR O PINO
 #define PWM_CHANNEL 0 // Canal LEDC
 
 #define pinSO  19 
@@ -78,33 +78,20 @@ void taskReadSensor(void *pvParameters) {
       liquido = brt - scl.get_offset();
       int pwmValue = map(brt, 0, 1023, 0, 255); // Mapear a leitura do sensor para o ciclo de trabalho do PWM
       ledcWrite(0, pwmValue);  // Atualizar o PWM com base na leitura do sensor
-      xTaskNotifyGive(xSD);
+      
     }
-  }
+  }vTaskDelay(1000);
 }
 
 void taskWriteSD(void *pvParameters) {
   (void)pvParameters;
   while (true) {
-    if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY) != 0) {
-      df = SD.open("Teste_estatico.txt", FILE_WRITE);
+      df = SD.open("Teste_estatico.txt", FILE_APPEND);
       df.print(brt);
       df.print(", ");
       df.println(liquido);
       df.print(temp);
       df.print(", ");
       df.close();
-    }
-  }
-}
-
-void taskReadTermopar(void *pvParameters) {
-  (void)pvParameters;
-  while (true) {
-    if (xSemaphoreTake(xsmfr, portMAX_DELAY) == pdTRUE) { 
-      temp = sensorTemp.readCelsius(); 
-      delayMicroseconds(2000000);  
-      xTaskNotifyGive(xSD);
-    }
-  }
+    }vTaskDelay(1000);
 }
