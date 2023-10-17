@@ -55,8 +55,13 @@ void setup() {
   ledcWrite(PWM_CHANNEL, 1);
   //Célula de carga
   scl.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  scl.set_scale(100.0);
-  scl.tare();
+  //Teste antes de setar escala
+  Serial.print("read average: \t\t");
+  Serial.println(scl.read_average(20));  	// print the average of 20 readings from the ADC
+
+  scl.set_scale(100.0); // Verificar depois o fator de calibracao
+  float zero = scl.get_units(50);
+  scl.tare(zero);
 
   // Cartão SD
   SD.begin(pinCS, spi);
@@ -100,13 +105,15 @@ void loop() {
 
 void taskReadSensor(void *pvParameters) {
   //(void)pvParameters;
+  float leitura;
   while (true) {
     
       temp = sensorTemp.readCelsius();
       // Rever leitura do HX711
-      brt = scl.read();
-      liquido = brt - scl.get_offset();
-      data = "Temp:"+ String(temp) + ", Leitura:" +  String(liquido);
+      //brt = scl.read();
+      //liquido = brt - scl.get_offset();
+      leitura=scl.get_units(1);
+      data = "Temp:"+ String(temp) + ", Leitura:" +  String(leitura);
       if (uxQueueSpacesAvailable(SDdataQueue) != 0)
       {
         xQueueSend(SDdataQueue, &data, 0);
