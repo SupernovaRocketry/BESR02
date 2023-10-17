@@ -14,7 +14,7 @@ void taskWriteSD(void *pvParameters);
 #define PWM_CHANNEL 0 // Canal LEDC
 
 #define pinSO  19 
-#define pinCS  16  
+#define pinCS  5 
 #define pinCLK 18  
 
 
