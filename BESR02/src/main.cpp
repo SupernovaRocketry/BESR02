@@ -22,7 +22,7 @@ void taskWriteSD(void *pvParameters);
 const int LOADCELL_DOUT_PIN = 35;
 const int LOADCELL_SCK_PIN = 18;
 
-MAX6675 sensorTemp(pinCLK, pinCS, pinSO); 
+// MAX6675 sensorTemp(pinCLK, pinCS, pinSO); 
 HX711 scl;
 File df;
 
@@ -48,23 +48,27 @@ void setup() {
   SDdataQueue = xQueueCreate(100, sizeof(String)); // 100 máximo da fila
   Serial.begin(9600); // 115200
   spi.begin(pinCLK, pinSO,pinmosi, pinCS);
-
+  Serial.println("Chegou aqui");
   ledcSetup(PWM_CHANNEL, 20000000 , 1);
   //PWM
   ledcAttachPin(PWM_PIN, PWM_CHANNEL);
   ledcWrite(PWM_CHANNEL, 1);
   //Célula de carga
+  if(!SD.begin(pinCS, spi)){
+    Serial.println("Card Mount Failed");
+    return;
+  }
   scl.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   //Teste antes de setar escala
-  Serial.print("read average: \t\t");
-  Serial.println(scl.read_average(20));  	// print the average of 20 readings from the ADC
+  // Serial.print("read average: \t\t");
+  // Serial.println(scl.read_average(20));  	// print the average of 20 readings from the ADC
 
-  scl.set_scale(100.0); // Verificar depois o fator de calibracao
-  float zero = scl.get_units(50);
-  scl.tare(zero);
+  // scl.set_scale(100.0); // Verificar depois o fator de calibracao
+  // float zero = scl.get_units(50);
+  // scl.tare(zero);
 
   // Cartão SD
-  SD.begin(pinCS, spi);
+  
   // Algoritmo para ir criando um arquivo toda vez que inicializa
   int n = 1;
   bool parar = false;
@@ -108,12 +112,13 @@ void taskReadSensor(void *pvParameters) {
   float leitura;
   while (true) {
     
-      temp = sensorTemp.readCelsius();
+      //temp = sensorTemp.readCelsius();
       // Rever leitura do HX711
       //brt = scl.read();
       //liquido = brt - scl.get_offset();
-      leitura=scl.get_units(1);
+      //leitura=scl.get_units(1);
       data = "Temp:"+ String(temp) + ", Leitura:" +  String(leitura);
+      Serial.println(data);
       if (uxQueueSpacesAvailable(SDdataQueue) != 0)
       {
         xQueueSend(SDdataQueue, &data, 0);
