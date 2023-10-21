@@ -6,7 +6,6 @@ void taskWriteSD(void *pvParameters);
 #include <HX711.h>
 #include <SD.h>
 #include <SPI.h>
-#include <FS.h>
 #include "max6675.h"
 #include "freertos/task.h"   // Biblioteca que proporciona a criação e manuseamento das Tasks
 #include "freertos/queue.h"  // Biblioteca que proporciona a criação e manuseamento das filas
@@ -20,14 +19,14 @@ void taskWriteSD(void *pvParameters);
 #define pinmosi 23
 
 const int LOADCELL_DOUT_PIN = 35;
-const int LOADCELL_SCK_PIN = 18;
+const int LOADCELL_SCK_PIN = 14;
 
 // MAX6675 sensorTemp(pinCLK, pinCS, pinSO); 
 HX711 scl;
 File df;
 
 SemaphoreHandle_t xsmfr;
-TaskHandle_t xsnsr, xSD, xtrmpr;
+SPIClass spi = SPIClass(VSPI);
 
 float brt, liquido, temp;
 
@@ -35,7 +34,6 @@ float brt, liquido, temp;
   xSemaphoreGiveFromISR(xsmfr, NULL);
   }
 */
-SPIClass spi = SPIClass(VSPI);
 char nomeConcat[16];
 
 SemaphoreHandle_t xMutex;
@@ -46,7 +44,7 @@ String data = "";
 void setup() {
   xMutex = xSemaphoreCreateMutex(); // cria o objeto do semáforo xMutex
   SDdataQueue = xQueueCreate(100, sizeof(String)); // 100 máximo da fila
-  Serial.begin(9600); // 115200
+  Serial.begin(115200); // 115200
   spi.begin(pinCLK, pinSO,pinmosi, pinCS);
   Serial.println("Chegou aqui");
   ledcSetup(PWM_CHANNEL, 20000000 , 1);
@@ -54,33 +52,32 @@ void setup() {
   ledcAttachPin(PWM_PIN, PWM_CHANNEL);
   ledcWrite(PWM_CHANNEL, 1);
   //Célula de carga
-  if(!SD.begin(pinCS, spi)){
+  if(!SD.begin(pinCS,spi)){
     Serial.println("Card Mount Failed");
-    return;
   }
   scl.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  //Teste antes de setar escala
-  // Serial.print("read average: \t\t");
-  // Serial.println(scl.read_average(20));  	// print the average of 20 readings from the ADC
-
-  // scl.set_scale(100.0); // Verificar depois o fator de calibracao
-  // float zero = scl.get_units(50);
-  // scl.tare(zero);
-
-  // Cartão SD
+  //Teste antes de setar escalas 
+  scl.set_scale(2.0); // Verificar depois o fator de calibracao
+  float zero = scl.get_units(50);
+  Serial.println(zero);  	
+  scl.tare(zero);
+  //Cartão SD
   
-  // Algoritmo para ir criando um arquivo toda vez que inicializa
+ // Algoritmo para ir criando um arquivo toda vez que inicializa
   int n = 1;
   bool parar = false;
   while (!parar)
   {
-      sprintf(nomeConcat, "/dataBE%d.txt", n);
+      sprintf(nomeConcat, "/data%d.txt", n);
+      Serial.println(nomeConcat);
       if (SD.exists(nomeConcat))
         n++;
       else
         parar = true;
     }
-  df = SD.open(nomeConcat, FILE_WRITE);
+
+  df = SD.open("/data1.txt", FILE_WRITE);
+  Serial.println(df);
   df.close();
 
  //xsmfr = xSemaphoreCreateBinary();
@@ -97,7 +94,7 @@ void setup() {
       "TaskSD",
       10000,
       NULL,
-      1,
+      0,
       NULL,
       1);
 }
@@ -116,14 +113,14 @@ void taskReadSensor(void *pvParameters) {
       // Rever leitura do HX711
       //brt = scl.read();
       //liquido = brt - scl.get_offset();
-      //leitura=scl.get_units(1);
+      leitura=scl.get_units(1);
       data = "Temp:"+ String(temp) + ", Leitura:" +  String(leitura);
       Serial.println(data);
       if (uxQueueSpacesAvailable(SDdataQueue) != 0)
       {
         xQueueSend(SDdataQueue, &data, 0);
       }
-  }vTaskDelay(1000);
+  }
 }
 #define SDMAX 20
 void taskWriteSD(void *pvParameters) {
@@ -138,7 +135,11 @@ void taskWriteSD(void *pvParameters) {
         df.println(data);
         df.close();
         contador_sd++;
+        
       }
+      contador_sd = 0;
+      Serial.println("Escreveu no SD");
     }
-  }vTaskDelay(1000);
+   Serial.println();
+  }vTaskDelay(500);
 }
